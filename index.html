@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Sky17 by wangfakang</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/github-light.css">
+    <script src="javascripts/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1 class="header">Sky17</h1>
+        <p class="header">nginx monitor about upstream </p>
+
+        <ul>
+          <li class="download"><a class="buttons" href="https://github.com/wangfakang/sky17/zipball/master">Download ZIP</a></li>
+          <li class="download"><a class="buttons" href="https://github.com/wangfakang/sky17/tarball/master">Download TAR</a></li>
+          <li><a class="buttons github" href="https://github.com/wangfakang/sky17">View On GitHub</a></li>
+        </ul>
+
+        <p class="header">This project is maintained by <a class="header name" href="https://github.com/wangfakang">wangfakang</a></p>
+
+
+      </header>
+      <section>
+        <p><code>nginx-ustats-module模块的研究与改进</code></p>
+
+<h1>
+<a id="一安装与配置说明" class="anchor" href="#%E4%B8%80%E5%AE%89%E8%A3%85%E4%B8%8E%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E" aria-hidden="true"><span class="octicon octicon-link"></span></a>一.安装与配置说明</h1>
+
+<ul>
+<li>下载该项目<a href="https://github.com/wangfakang/ngx_ustats_module">nginx-ustats-module</a>,此模块支持tengine-2.1.1.</li>
+<li>
+<p>进入nginx根目录:</p>
+
+<ul>
+<li>     patch -p1 -i nginx-1.6.2.patch</li>
+<li>     ./configure --add-module=src/http/modules/ngx_ustats_module</li>
+<li>     make &amp;&amp; make install</li>
+</ul>
+</li>
+<li><p>nginx配置文件:</p></li>
+</ul>
+
+<div class="highlight highlight-source-nginx"><pre>    <span class="pl-k">location</span> <span class="pl-en">/ustats </span>{
+        <span class="pl-k">ustats</span> memsize=3m; <span class="pl-c">#指定监控共享内存饿大小.</span>
+        <span class="pl-k">ustats_refresh_interval</span> 6000;<span class="pl-c">#监控数据多长时间刷新一次</span>
+        <span class="pl-k">ustats_html_table_width</span> 95;<span class="pl-c">#html的宽度</span>
+        <span class="pl-k">ustats_html_table_height</span> 95;<span class="pl-c">#html的高度</span>
+    }</pre></div>
+
+<h1>
+<a id="二实现原理" class="anchor" href="#%E4%BA%8C%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86" aria-hidden="true"><span class="octicon octicon-link"></span></a>二.实现原理</h1>
+
+<p>该模块主要的思想就是在nginx的upstream的处理的不同阶段来进行记录相应的<code>peer</code>的状态.值得学习的是:他使用了一个大的共享内存
+完美的解决多个worker数据的<code>聚合</code>,当然多进程操作同一块共享内存存在安全问题,是这样解决的:使用nginx中封装的cpu原子操作来进行
+计数(如:<code>ngx_atomic_fetch_add</code>).还有个技巧就是:使用一个大的共享内存,然后各自<code>peer</code>只需记住自己在共享内存中的起始地址,然后
+使用其偏移量进行读取就ok了.        </p>
+
+<h1>
+<a id="三监控数据说明" class="anchor" href="#%E4%B8%89%E7%9B%91%E6%8E%A7%E6%95%B0%E6%8D%AE%E8%AF%B4%E6%98%8E" aria-hidden="true"><span class="octicon octicon-link"></span></a>三.监控数据说明</h1>
+
+<ul>
+<li>Number of requests</li>
+<li>Http 499/500/503 errors count</li>
+<li>Tcp errors</li>
+<li>Http read/write timeouts</li>
+<li>Fail timeout</li>
+<li>Max fails count</li>
+<li>Last failed access time</li>
+<li>Total fails count</li>
+<li>Blacklisted backend highlighting</li>
+<li>Down backends highlighting</li>
+</ul>
+
+<p>The module's <strong>web interface</strong> provides a good visual representation of what's going on with your backends. Values in some columns of the table can be sorted within each upstream row.</p>
+
+<p>Gathered data can also be retrieved in <strong>JSON format</strong>. To do so, append <code>?json=1</code> to the end of location on which the module was set to work on (see configuration instructions below).</p>
+
+<ul>
+<li>Json Show:
+request url:<br>
+<code>http://127.0.0.1:8045/monitor?json=1</code><br>
+</li>
+</ul>
+
+<div class="highlight highlight-source-json"><pre>{
+    <span class="pl-s"><span class="pl-pds">"</span>bar<span class="pl-pds">"</span></span>:
+    [
+        [<span class="pl-s"><span class="pl-pds">"</span>127.0.0.1:80<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">10</span>, <span class="pl-c1">1</span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>],
+        [<span class="pl-s"><span class="pl-pds">"</span>127.0.0.1:81<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">10</span>, <span class="pl-c1">1</span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>],
+        [<span class="pl-s"><span class="pl-pds">"</span>61.135.169.121:80 (www.baidu.com)<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">10</span>, <span class="pl-c1">1</span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>],
+        [<span class="pl-s"><span class="pl-pds">"</span>61.135.169.125:80 (www.baidu.com)<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">10</span>, <span class="pl-c1">1</span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>0000-00-00 00:00:00<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>],
+        <span class="pl-c1">0</span>
+    ],
+    <span class="pl-s"><span class="pl-pds">"</span>www.baidu.com<span class="pl-pds">"</span></span>:
+    [
+        [<span class="pl-s"><span class="pl-pds">"</span>61.135.169.121:80 (www.baidu.com)<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>, <span class="pl-c1">1</span>, <span class="pl-c1">8296</span>, <span class="pl-c1">1</span>, <span class="pl-c1">60401</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">20</span>, <span class="pl-c1">0</span>, <span class="pl-c1">10</span>, <span class="pl-c1">1</span>, <span class="pl-s"><span class="pl-pds">"</span>2016-01-20 12:44:02<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>2016-01-20 14:13:22<span class="pl-pds">"</span></span>, <span class="pl-c1">7003</span>],
+        [<span class="pl-s"><span class="pl-pds">"</span>61.135.169.125:80 (www.baidu.com)<span class="pl-pds">"</span></span>, <span class="pl-c1">0</span>, <span class="pl-c1">1</span>, <span class="pl-c1">8375</span>, <span class="pl-c1">1</span>, <span class="pl-c1">360</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">0</span>, <span class="pl-c1">24</span>, <span class="pl-c1">0</span>, <span class="pl-c1">10</span>, <span class="pl-c1">1</span>, <span class="pl-s"><span class="pl-pds">"</span>2016-01-20 12:46:13<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>2016-01-20 14:13:23<span class="pl-pds">"</span></span>, <span class="pl-c1">6826</span>],
+        <span class="pl-c1">1</span>
+    ]
+}</pre></div>
+
+<p>upstream name:<br>
+[<br>
+    [peer_name, down, failed, requests, RPS, SPEED, 499, 5xx, 500, 503, tcp_errors, R_timeouts, w_timeouts, f_t, m_f, s_t, last_fail_t, tot_f],
+implicit<br>
+]</p>
+
+<p><code>implicit</code>: means different upstream (if implicit 1 means 'implicit' upstream for example <code>proxy_pass</code>). </p>
+
+<p>5xx:  499 &lt; x &lt; 600 explict 500 503</p>
+
+<ul>
+<li>Html Show<br>
+request url:<br>
+<code>http://127.0.0.1:8045/monitor?json=1</code><br>
+</li>
+</ul>
+
+<p><img src="https://github.com/wangfakang/ngx_ustats_module/blob/master/doc/monitor.jpg" alt="Screenshot"></p>
+
+<ul>
+<li>Note<br>
+<code>this module not support</code>dynamic manage upstream<code>forexample 'tengine dyups module'.</code>
+</li>
+</ul>
+
+<h1>
+<a id="communite--" class="anchor" href="#communite--" aria-hidden="true"><span class="octicon octicon-link"></span></a>Communite  </h1>
+
+<p>在使用中有任何问题，欢迎反馈给我，可以用以下联系方式跟我交流</p>
+
+<ul>
+<li>邮件(1031379296#qq.com, 把#换成@)</li>
+<li>QQ: 1031379296</li>
+<li>weibo: <a href="http://weibo.com/fakangwang">@王发康</a>
+</li>
+</ul>
+
+<h1>
+<a id="thx" class="anchor" href="#thx" aria-hidden="true"><span class="octicon octicon-link"></span></a>Thx</h1>
+
+<ul>
+<li>chunshengsterATgmail.com</li>
+</ul>
+
+<h1>
+<a id="author" class="anchor" href="#author" aria-hidden="true"><span class="octicon octicon-link"></span></a>Author</h1>
+
+<ul>
+<li>Linux\nginx\golang\c\c++爱好者</li>
+<li>欢迎一起交流  一起学习# </li>
+<li>Others say good and Others good</li>
+</ul>
+      </section>
+      <footer>
+        <p><small>Hosted on <a href="https://pages.github.com">GitHub Pages</a> using the Dinky theme</small></p>
+      </footer>
+    </div>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+		          <script type="text/javascript">
+            var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+            document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+          </script>
+          <script type="text/javascript">
+            try {
+              var pageTracker = _gat._getTracker("nginx monitor upstream ");
+            pageTracker._trackPageview();
+            } catch(err) {}
+          </script>
+
+  </body>
+</html>
